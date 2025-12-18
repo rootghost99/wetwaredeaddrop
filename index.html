@@ -275,6 +275,10 @@
             max-width: 400px;
             text-align: center;
         }
+        .modal.modal-danger {
+            border-color: var(--accent-red);
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.3);
+        }
         .hidden { display: none !important; }
         input[type="number"] {
             background: #000;
@@ -285,6 +289,35 @@
             width: 80%;
             margin: 15px 0;
             text-align: center;
+        }
+
+        /* Shop/Upgrade styles */
+        .shop-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #333;
+            background: #0a0a0a;
+        }
+        .shop-item-info { text-align: left; flex: 1; }
+        .shop-item-name { font-weight: bold; color: var(--accent-cyan); }
+        .shop-item-desc { font-size: 0.7rem; color: var(--text-dim); margin-top: 2px; }
+        .shop-item-owned { font-size: 0.65rem; color: var(--accent-green); }
+        .shop-item-price { margin-right: 10px; color: var(--accent-yellow); }
+
+        /* Loan shark styling */
+        .shark-portrait {
+            font-size: 3rem;
+            margin: 10px 0;
+        }
+        .shark-dialog {
+            font-style: italic;
+            color: var(--text-dim);
+            margin: 15px 0;
+            padding: 10px;
+            border-left: 2px solid var(--accent-red);
         }
     </style>
 </head>
@@ -317,9 +350,16 @@
             <div class="stat-label">Health</div>
             <div class="stat-value text-pink" id="stat-health">100%</div>
         </div>
-        <div class="stat-box" style="grid-column: span 2;">
+        <div class="stat-box">
             <div class="stat-label">Current Sector</div>
             <div class="stat-value text-cyan" id="stat-loc">Sector 7</div>
+        </div>
+        <div class="stat-box">
+            <button class="btn" style="padding: 6px 10px; font-size: 0.7rem; width: 100%;" onclick="openShop()">SHOP</button>
+            <div style="margin-top: 5px; display: flex; gap: 5px;">
+                <button class="btn" style="padding: 4px 6px; font-size: 0.55rem; flex: 1;" onclick="saveGame()">SAVE</button>
+                <button class="btn" style="padding: 4px 6px; font-size: 0.55rem; flex: 1;" onclick="loadGame()">LOAD</button>
+            </div>
         </div>
     </div>
 
@@ -405,6 +445,27 @@
     </div>
 </div>
 
+<!-- Shop Modal -->
+<div id="modal-shop" class="modal-overlay hidden">
+    <div class="modal">
+        <h3 class="text-cyan">BLACK MARKET SHOP</h3>
+        <p style="font-size: 0.7rem; color: var(--text-dim);">Your cash: <span class="text-green" id="shop-cash">$0</span></p>
+        <div id="shop-items"></div>
+        <button class="btn btn-danger" style="margin-top: 15px;" onclick="closeModal('modal-shop')">CLOSE</button>
+    </div>
+</div>
+
+<!-- Loan Shark Modal -->
+<div id="modal-shark" class="modal-overlay hidden">
+    <div class="modal modal-danger">
+        <div class="shark-portrait">🦈</div>
+        <h3 class="text-red" id="shark-title">THE SHARK</h3>
+        <p class="shark-dialog" id="shark-dialog"></p>
+        <p id="shark-demand" style="font-size: 0.9rem;"></p>
+        <div id="shark-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;"></div>
+    </div>
+</div>
+
 <script>
 const MAX_DAYS = 30;
 const ITEMS = [
@@ -425,6 +486,55 @@ const LOCATIONS = [
 ];
 const LOCS = LOCATIONS.map(l => l.name);
 
+// Upgrades available in the shop
+const UPGRADES = [
+    {
+        id: 'cargo',
+        name: 'Cargo Expander',
+        desc: '+25 carrying capacity',
+        basePrice: 1000,
+        priceMultiplier: 1.5, // Price increases each purchase
+        maxOwned: 5,
+        effect: (state) => { state.cap += 25; }
+    },
+    {
+        id: 'medkit',
+        name: 'Med-Kit',
+        desc: 'Restore 35% health',
+        basePrice: 500,
+        priceMultiplier: 1,
+        maxOwned: 99,
+        effect: (state) => { state.health = Math.min(100, state.health + 35); }
+    },
+    {
+        id: 'armor',
+        name: 'Body Armor',
+        desc: 'Reduce damage from events by 30%',
+        basePrice: 2500,
+        priceMultiplier: 1,
+        maxOwned: 1,
+        effect: (state) => { state.hasArmor = true; }
+    },
+    {
+        id: 'scanner',
+        name: 'Price Scanner',
+        desc: 'See price trends more often',
+        basePrice: 1500,
+        priceMultiplier: 1,
+        maxOwned: 1,
+        effect: (state) => { state.hasScanner = true; }
+    }
+];
+
+// Loan shark dialog options
+const SHARK_DIALOGS = [
+    "You've been avoiding me, runner. That's not smart.",
+    "My patience is running thin. Where's my money?",
+    "Did you think I'd forget about you? I never forget.",
+    "Time to pay up, or things get... unpleasant.",
+    "Your debt is getting out of hand. Let's fix that."
+];
+
 // Random events that can occur during travel
 const EVENTS = {
     good: [
@@ -434,10 +544,10 @@ const EVENTS = {
         { title: "Debt Forgiveness", text: "An anonymous benefactor paid part of your debt.", effect: () => { const amt = Math.floor(state.debt * 0.1); state.debt -= amt; return `-$${amt} debt`; }}
     ],
     bad: [
-        { title: "Mugged!", text: "A gang jumped you in a dark corridor.", effect: () => { const loss = Math.floor(state.cash * 0.15); state.cash -= loss; state.health -= 15; return `-$${loss} cash, -15% health`; }},
+        { title: "Mugged!", text: "A gang jumped you in a dark corridor.", effect: () => { const loss = Math.floor(state.cash * 0.15); state.cash -= loss; const dmg = state.hasArmor ? 10 : 15; state.health -= dmg; return `-$${loss} cash, -${dmg}% health`; }},
         { title: "Police Raid!", text: "Sector police confiscated some of your goods.", effect: () => { let lost = []; ITEMS.forEach(item => { if (state.inventory[item.id] > 0) { const confiscated = Math.ceil(state.inventory[item.id] * 0.2); state.inventory[item.id] -= confiscated; if (confiscated > 0) lost.push(`${confiscated} ${item.name}`); }}); return lost.length > 0 ? `Lost: ${lost.join(', ')}` : "Nothing confiscated"; }},
         { title: "Bad Deal", text: "A trader scammed you with counterfeit credits.", effect: () => { const loss = Math.floor(Math.random() * 300) + 100; state.cash = Math.max(0, state.cash - loss); return `-$${loss} cash`; }},
-        { title: "Toxic Exposure", text: "You passed through a contaminated zone.", effect: () => { state.health -= 20; return "-20% health"; }},
+        { title: "Toxic Exposure", text: "You passed through a contaminated zone.", effect: () => { const dmg = state.hasArmor ? 14 : 20; state.health -= dmg; return `-${dmg}% health`; }},
         { title: "Market Crash!", text: "A major buyer pulled out of the market.", effect: () => { const item = ITEMS[Math.floor(Math.random() * ITEMS.length)]; state.prices[item.id] = Math.floor(state.prices[item.id] * 0.4); state.priceTrends[item.id] = 'crash'; return `${item.name} prices crashed!`; }}
     ],
     neutral: [
@@ -452,7 +562,14 @@ let state = {
     // Track average purchase price for profit/loss calculation
     costBasis: {},
     // Track bubble/crash cycles: { itemId: { type: 'bubble'|'falling', duration: days_remaining, multiplier: current } }
-    priceCycles: {}
+    priceCycles: {},
+    // Upgrades tracking
+    upgrades: {}, // { upgradeId: count }
+    hasArmor: false,
+    hasScanner: false,
+    // Loan shark tracking
+    sharkVisits: 0,
+    lastSharkDay: 0
 };
 
 function init() {
@@ -461,6 +578,9 @@ function init() {
         state.priceTrends[i.id] = null;
         state.costBasis[i.id] = 0;
         state.priceCycles[i.id] = null;
+    });
+    UPGRADES.forEach(u => {
+        state.upgrades[u.id] = 0;
     });
     generatePrices();
     renderLocs();
@@ -549,6 +669,7 @@ function updateUI() {
     const healthEl = document.getElementById('stat-health');
     healthEl.className = state.health > 50 ? 'stat-value text-pink' : (state.health > 25 ? 'stat-value text-yellow' : 'stat-value text-red');
     document.getElementById('stat-hold').innerText = Object.values(state.inventory).reduce((a,b)=>a+b,0);
+    document.getElementById('stat-cap').innerText = state.cap;
     document.getElementById('stat-loc').innerText = LOCS[state.loc];
     document.getElementById('header-day').innerText = `Day ${state.day}/${MAX_DAYS}`;
 
@@ -624,10 +745,14 @@ function travel(idx) {
 
     // Health-based danger: low health increases bad event chance
     if (state.health <= 25 && Math.random() < 0.3) {
-        state.health -= 10;
+        const damage = state.hasArmor ? 7 : 10;
+        state.health -= damage;
         log("Your injuries are getting worse. Find medical supplies!", "danger");
         flashScreen('damage');
     }
+
+    // Check for loan shark encounter (high debt = higher chance)
+    checkLoanSharkEncounter();
 
     checkGameOver();
 }
@@ -737,7 +862,9 @@ function restartGame() {
     state = {
         day: 1, cash: 5000, debt: 3000, health: 100, cap: 100,
         loc: 0, inventory: {}, prices: {}, priceTrends: {}, gameOver: false,
-        costBasis: {}, priceCycles: {}
+        costBasis: {}, priceCycles: {},
+        upgrades: {}, hasArmor: false, hasScanner: false,
+        sharkVisits: 0, lastSharkDay: 0
     };
     closeModal('modal-gameover');
     document.getElementById('log-panel').innerHTML = ''; // Clear log
@@ -966,7 +1093,309 @@ function log(msg, type = null) {
 function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
+// ==================== SHOP SYSTEM ====================
+
+function openShop() {
+    if (state.gameOver) return;
+    document.getElementById('shop-cash').innerText = '$' + state.cash.toLocaleString();
+    renderShopItems();
+    openModal('modal-shop');
+}
+
+function renderShopItems() {
+    const container = document.getElementById('shop-items');
+    container.innerHTML = '';
+
+    UPGRADES.forEach(upgrade => {
+        const owned = state.upgrades[upgrade.id] || 0;
+        const price = Math.floor(upgrade.basePrice * Math.pow(upgrade.priceMultiplier, owned));
+        const canBuy = state.cash >= price && owned < upgrade.maxOwned;
+        const isSoldOut = owned >= upgrade.maxOwned;
+
+        const div = document.createElement('div');
+        div.className = 'shop-item';
+
+        let statusText = '';
+        if (upgrade.id === 'medkit') {
+            statusText = '';
+        } else if (isSoldOut) {
+            statusText = upgrade.id === 'armor' || upgrade.id === 'scanner' ? '<span class="shop-item-owned">OWNED</span>' : '<span class="shop-item-owned">MAX</span>';
+        } else if (owned > 0) {
+            statusText = `<span class="shop-item-owned">Owned: ${owned}</span>`;
+        }
+
+        div.innerHTML = `
+            <div class="shop-item-info">
+                <div class="shop-item-name">${upgrade.name}</div>
+                <div class="shop-item-desc">${upgrade.desc}</div>
+                ${statusText}
+            </div>
+            <span class="shop-item-price">${isSoldOut ? '' : '$' + price.toLocaleString()}</span>
+            <button class="btn" style="padding:4px 10px; font-size:0.7rem;"
+                ${canBuy ? '' : 'disabled'}
+                onclick="buyUpgrade('${upgrade.id}')">
+                ${isSoldOut ? 'SOLD OUT' : 'BUY'}
+            </button>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function buyUpgrade(upgradeId) {
+    const upgrade = UPGRADES.find(u => u.id === upgradeId);
+    const owned = state.upgrades[upgrade.id] || 0;
+    const price = Math.floor(upgrade.basePrice * Math.pow(upgrade.priceMultiplier, owned));
+
+    if (state.cash < price || owned >= upgrade.maxOwned) return;
+
+    state.cash -= price;
+    state.upgrades[upgrade.id] = owned + 1;
+    upgrade.effect(state);
+
+    log(`Purchased ${upgrade.name} for $${price.toLocaleString()}`, 'good');
+    showUpgradeToast(upgrade.name, price);
+
+    document.getElementById('shop-cash').innerText = '$' + state.cash.toLocaleString();
+    renderShopItems();
+    updateUI();
+}
+
+function showUpgradeToast(name, price) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-buy';
+    toast.innerHTML = `
+        <span class="text-cyan">UPGRADE</span>
+        <span class="toast-amount">${name}</span>
+        <span class="toast-profit-info">-$${price.toLocaleString()}</span>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+// ==================== LOAN SHARK SYSTEM ====================
+
+function checkLoanSharkEncounter() {
+    // Shark only appears if debt > $5000 and hasn't visited this day
+    if (state.debt <= 5000 || state.lastSharkDay === state.day) return;
+
+    // Chance increases with debt level
+    let encounterChance = 0;
+    if (state.debt > 15000) encounterChance = 0.5;
+    else if (state.debt > 10000) encounterChance = 0.35;
+    else if (state.debt > 5000) encounterChance = 0.2;
+
+    if (Math.random() < encounterChance) {
+        triggerSharkEncounter();
+    }
+}
+
+function triggerSharkEncounter() {
+    state.lastSharkDay = state.day;
+    state.sharkVisits++;
+
+    const dialog = SHARK_DIALOGS[Math.floor(Math.random() * SHARK_DIALOGS.length)];
+    const demandPercent = Math.min(30 + state.sharkVisits * 5, 50); // 30-50% of debt
+    const demandAmount = Math.floor(state.debt * (demandPercent / 100));
+
+    document.getElementById('shark-dialog').innerText = `"${dialog}"`;
+
+    let demandText = '';
+    if (state.cash >= demandAmount) {
+        demandText = `The shark demands <span class="text-red">$${demandAmount.toLocaleString()}</span> (${demandPercent}% of your debt).`;
+    } else {
+        demandText = `The shark demands <span class="text-red">$${demandAmount.toLocaleString()}</span>, but you only have <span class="text-green">$${state.cash.toLocaleString()}</span>.`;
+    }
+    document.getElementById('shark-demand').innerHTML = demandText;
+
+    // Generate buttons based on what player can do
+    const buttonsDiv = document.getElementById('shark-buttons');
+    buttonsDiv.innerHTML = '';
+
+    if (state.cash >= demandAmount) {
+        const payBtn = document.createElement('button');
+        payBtn.className = 'btn';
+        payBtn.innerText = `PAY $${demandAmount.toLocaleString()}`;
+        payBtn.onclick = () => sharkPay(demandAmount);
+        buttonsDiv.appendChild(payBtn);
+    }
+
+    if (state.cash > 0 && state.cash < demandAmount) {
+        const payAllBtn = document.createElement('button');
+        payAllBtn.className = 'btn';
+        payAllBtn.innerText = `PAY ALL ($${state.cash.toLocaleString()})`;
+        payAllBtn.onclick = () => sharkPay(state.cash);
+        buttonsDiv.appendChild(payAllBtn);
+    }
+
+    const refuseBtn = document.createElement('button');
+    refuseBtn.className = 'btn btn-danger';
+    refuseBtn.innerText = 'REFUSE';
+    refuseBtn.onclick = () => sharkRefuse();
+    buttonsDiv.appendChild(refuseBtn);
+
+    openModal('modal-shark');
+    log(`[SHARK] The loan shark found you! Debt: $${state.debt.toLocaleString()}`, 'danger');
+}
+
+function sharkPay(amount) {
+    state.cash -= amount;
+    state.debt -= amount;
+
+    closeModal('modal-shark');
+    updateUI();
+
+    if (amount >= state.debt + amount) {
+        log(`Paid the shark $${amount.toLocaleString()}. He seems satisfied... for now.`, 'warning');
+    } else {
+        log(`Paid the shark $${amount.toLocaleString()}. Remaining debt: $${state.debt.toLocaleString()}`, 'warning');
+    }
+
+    showSharkToast(amount, false);
+}
+
+function sharkRefuse() {
+    closeModal('modal-shark');
+
+    // Shark takes revenge - damage scales with visits
+    const baseDamage = 15 + state.sharkVisits * 5;
+    const damage = state.hasArmor ? Math.floor(baseDamage * 0.7) : baseDamage;
+
+    state.health -= damage;
+    state.debt = Math.floor(state.debt * 1.15); // 15% penalty added to debt
+
+    log(`The shark's thugs beat you! -${damage}% health. Debt increased by 15% as "interest".`, 'danger');
+    flashScreen('damage');
+    showSharkToast(0, true, damage);
+    updateUI();
+}
+
+function showSharkToast(amount, refused, damage = 0) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.style.borderColor = refused ? 'var(--accent-red)' : 'var(--accent-yellow)';
+    toast.style.boxShadow = refused ? '0 0 20px rgba(255, 0, 0, 0.5)' : '0 0 20px rgba(255, 255, 0, 0.3)';
+
+    if (refused) {
+        toast.innerHTML = `
+            <span class="text-red">SHARK ATTACK!</span>
+            <span class="toast-amount">-${damage}% Health</span>
+            <span class="toast-profit-info">+15% debt penalty</span>
+        `;
+    } else {
+        toast.innerHTML = `
+            <span class="text-yellow">PAID THE SHARK</span>
+            <span class="toast-amount">-$${amount.toLocaleString()}</span>
+        `;
+    }
+
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+// ==================== SAVE/LOAD SYSTEM ====================
+
+function saveGame() {
+    if (state.gameOver) {
+        log("Cannot save - game is over!", "warning");
+        return;
+    }
+
+    const saveData = {
+        version: 1,
+        timestamp: Date.now(),
+        state: state
+    };
+
+    try {
+        localStorage.setItem('neontrader_save', JSON.stringify(saveData));
+        log(`Game saved! Day ${state.day}, Cash: $${state.cash.toLocaleString()}`, 'good');
+        showSaveToast('saved');
+    } catch (e) {
+        log("Failed to save game!", "danger");
+    }
+}
+
+function loadGame() {
+    try {
+        const saveData = localStorage.getItem('neontrader_save');
+        if (!saveData) {
+            log("No save file found!", "warning");
+            return;
+        }
+
+        const parsed = JSON.parse(saveData);
+        if (!parsed.state) {
+            log("Save file corrupted!", "danger");
+            return;
+        }
+
+        // Restore state
+        state = parsed.state;
+
+        // Ensure new properties exist (backwards compatibility)
+        if (!state.upgrades) state.upgrades = {};
+        if (state.hasArmor === undefined) state.hasArmor = false;
+        if (state.hasScanner === undefined) state.hasScanner = false;
+        if (state.sharkVisits === undefined) state.sharkVisits = 0;
+        if (state.lastSharkDay === undefined) state.lastSharkDay = 0;
+        if (!state.costBasis) state.costBasis = {};
+        if (!state.priceCycles) state.priceCycles = {};
+
+        // Initialize any missing item data
+        ITEMS.forEach(i => {
+            if (state.inventory[i.id] === undefined) state.inventory[i.id] = 0;
+            if (state.costBasis[i.id] === undefined) state.costBasis[i.id] = 0;
+            if (state.priceCycles[i.id] === undefined) state.priceCycles[i.id] = null;
+        });
+        UPGRADES.forEach(u => {
+            if (state.upgrades[u.id] === undefined) state.upgrades[u.id] = 0;
+        });
+
+        // Close start modal if open
+        closeModal('modal-start');
+        document.getElementById('log-panel').innerHTML = '';
+
+        renderLocs();
+        updateUI();
+
+        const saveDate = new Date(parsed.timestamp).toLocaleString();
+        log(`Game loaded! Day ${state.day}, saved ${saveDate}`, 'good');
+        showSaveToast('loaded');
+    } catch (e) {
+        log("Failed to load game: " + e.message, "danger");
+    }
+}
+
+function showSaveToast(action) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.style.borderColor = 'var(--accent-cyan)';
+    toast.style.boxShadow = '0 0 20px rgba(0, 255, 255, 0.3)';
+    toast.innerHTML = `
+        <span class="text-cyan">GAME ${action.toUpperCase()}</span>
+        <span class="toast-amount">Day ${state.day}</span>
+    `;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+// Check for existing save on load
+function checkAutoLoad() {
+    const saveData = localStorage.getItem('neontrader_save');
+    if (saveData) {
+        try {
+            const parsed = JSON.parse(saveData);
+            const saveDate = new Date(parsed.timestamp).toLocaleString();
+            log(`Save file found from ${saveDate}. Use LOAD to continue.`, 'warning');
+        } catch (e) {}
+    }
+}
+
 init();
+checkAutoLoad();
 </script>
 </body>
 </html>
