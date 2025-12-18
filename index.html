@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Trader</title>
+    <style>
+        :root {
+            --bg-color: #050505;
+            --panel-bg: #111;
+            --text-main: #eee;
+            --text-dim: #888;
+            --accent-green: #0f0;
+            --accent-pink: #f0f;
+            --accent-cyan: #0ff;
+            --accent-red: #f00;
+            --accent-yellow: #ff0;
+            --border: 1px solid #333;
+            --font-mono: 'Courier New', Courier, monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-mono);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid var(--accent-green);
+            color: var(--accent-green);
+            padding: 8px 12px;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            font-weight: bold;
+            font-size: 0.9rem;
+            touch-action: manipulation;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--accent-green);
+            color: #000;
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
+        .btn:disabled {
+            border-color: #444;
+            color: #444;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .text-green { color: var(--accent-green); }
+        .text-red { color: var(--accent-red); }
+        .text-cyan { color: var(--accent-cyan); }
+        .text-pink { color: var(--accent-pink); }
+        .text-yellow { color: var(--accent-yellow); }
+
+        header {
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--accent-green);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #000;
+            z-index: 10;
+        }
+
+        h1 { margin: 0; font-size: 1.2rem; letter-spacing: 2px; }
+
+        #game-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            flex-direction: column;
+        }
+
+        @media (min-width: 768px) {
+            #game-container { flex-direction: row; }
+        }
+
+        .panel {
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        #stats-panel {
+            flex: 0 0 auto;
+            background: #0a0a0a;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            border-bottom: 1px solid #333;
+        }
+
+        @media (min-width: 768px) {
+            #stats-panel {
+                flex: 0 0 240px;
+                display: flex;
+                flex-direction: column;
+                border-bottom: none;
+                border-right: 1px solid #333;
+            }
+        }
+
+        .stat-box {
+            border: 1px solid #222;
+            padding: 8px;
+            background: #111;
+        }
+        .stat-label { color: var(--text-dim); font-size: 0.65rem; text-transform: uppercase; }
+        .stat-value { font-size: 1rem; font-weight: bold; }
+
+        #main-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #0e0e0e;
+            overflow: hidden;
+        }
+
+        #locations-bar {
+            padding: 10px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            white-space: nowrap;
+            background: #000;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #market-area {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 5px; color: var(--text-dim); border-bottom: 1px solid #333; font-size: 0.8rem; }
+        td { padding: 12px 5px; border-bottom: 1px solid #222; font-size: 0.9rem; }
+
+        .qty-badge {
+            background: #333;
+            color: var(--accent-cyan);
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+        }
+
+        #log-panel {
+            height: 120px;
+            background: #000;
+            border-top: 1px solid #333;
+            padding: 10px;
+            font-size: 0.75rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse;
+        }
+
+        .log-entry { margin-bottom: 4px; border-left: 2px solid var(--accent-green); padding-left: 8px; }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100;
+        }
+        .modal {
+            background: #111;
+            border: 1px solid var(--accent-green);
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .hidden { display: none !important; }
+        input[type="number"] {
+            background: #000;
+            border: 1px solid var(--accent-green);
+            color: #fff;
+            padding: 10px;
+            font-size: 1.2rem;
+            width: 80%;
+            margin: 15px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>NEON<span class="text-green">TRADER</span></h1>
+    <div id="header-day">Day 1/30</div>
+</header>
+
+<div id="game-container">
+    <div id="stats-panel" class="panel">
+        <div class="stat-box">
+            <div class="stat-label">Cash</div>
+            <div class="stat-value text-green" id="stat-cash">$0</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Debt</div>
+            <div class="stat-value text-red" id="stat-debt">$0</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Hold</div>
+            <div class="stat-value"><span id="stat-hold">0</span>/<span id="stat-cap">100</span></div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Health</div>
+            <div class="stat-value text-pink" id="stat-health">100%</div>
+        </div>
+        <div class="stat-box" style="grid-column: span 2;">
+            <div class="stat-label">Current Sector</div>
+            <div class="stat-value text-cyan" id="stat-loc">Sector 7</div>
+        </div>
+    </div>
+
+    <div id="main-panel">
+        <div id="locations-bar"></div>
+        <div id="market-area">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ITEM</th>
+                        <th>PRICE</th>
+                        <th>OWNED</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="market-body"></tbody>
+            </table>
+        </div>
+        <div id="log-panel"></div>
+    </div>
+</div>
+
+<!-- Start Modal -->
+<div id="modal-start" class="modal-overlay">
+    <div class="modal">
+        <h2 class="text-green">NEON TRADER</h2>
+        <p>Buy low, sell high. Pay the shark. Survive 30 days.</p>
+        <button class="btn" onclick="startGame()">JACK IN</button>
+    </div>
+</div>
+
+<!-- Transaction Modal -->
+<div id="modal-trade" class="modal-overlay hidden">
+    <div class="modal">
+        <h3 id="trade-title">TRADE</h3>
+        <p id="trade-info"></p>
+        <input type="number" id="trade-input" pattern="\d*">
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button class="btn btn-danger" onclick="closeModal('modal-trade')">CANCEL</button>
+            <button class="btn" id="trade-confirm-btn">CONFIRM</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const MAX_DAYS = 30;
+const ITEMS = [
+    { id: 'h2o', name: 'Nano-Water', min: 5, max: 25 },
+    { id: 'chips', name: 'Memory', min: 20, max: 80 },
+    { id: 'stims', name: 'Neuro-Stims', min: 100, max: 400 },
+    { id: 'parts', name: 'Mech-Parts', min: 500, max: 1500 },
+    { id: 'cores', name: 'AI Cores', min: 2000, max: 8000 }
+];
+const LOCS = ["Sector 7", "Neon Bay", "The Stack", "Void", "High City"];
+
+let state = {
+    day: 1, cash: 2000, debt: 5000, health: 100, cap: 100,
+    loc: 0, inventory: {}, prices: {}
+};
+
+function init() {
+    ITEMS.forEach(i => state.inventory[i.id] = 0);
+    generatePrices();
+    renderLocs();
+    updateUI();
+}
+
+function startGame() {
+    init();
+    closeModal('modal-start');
+}
+
+function generatePrices() {
+    ITEMS.forEach(item => {
+        state.prices[item.id] = Math.floor(item.min + Math.random() * (item.max - item.min));
+    });
+}
+
+function updateUI() {
+    document.getElementById('stat-cash').innerText = '$' + state.cash.toLocaleString();
+    document.getElementById('stat-debt').innerText = '$' + state.debt.toLocaleString();
+    document.getElementById('stat-health').innerText = state.health + '%';
+    document.getElementById('stat-hold').innerText = Object.values(state.inventory).reduce((a,b)=>a+b,0);
+    document.getElementById('stat-loc').innerText = LOCS[state.loc];
+    document.getElementById('header-day').innerText = `Day ${state.day}/${MAX_DAYS}`;
+
+    const body = document.getElementById('market-body');
+    body.innerHTML = '';
+    ITEMS.forEach(item => {
+        const row = document.createElement('tr');
+        const price = state.prices[item.id];
+        const owned = state.inventory[item.id];
+        row.innerHTML = `
+            <td>${item.name}</td>
+            <td class="text-green">$${price}</td>
+            <td>${owned > 0 ? `<span class="qty-badge">${owned}</span>` : '-'}</td>
+            <td style="text-align:right">
+                <button class="btn" style="padding:4px 8px; font-size:0.7rem;" onclick="openTrade('${item.id}', 'buy')">BUY</button>
+                <button class="btn" style="padding:4px 8px; font-size:0.7rem;" ${owned<=0?'disabled':''} onclick="openTrade('${item.id}', 'sell')">SELL</button>
+            </td>
+        `;
+        body.appendChild(row);
+    });
+}
+
+function renderLocs() {
+    const bar = document.getElementById('locations-bar');
+    bar.innerHTML = '';
+    LOCS.forEach((l, i) => {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.innerText = l;
+        b.disabled = (i === state.loc);
+        b.onclick = () => travel(i);
+        bar.appendChild(b);
+    });
+}
+
+function travel(idx) {
+    state.day++;
+    state.loc = idx;
+    state.debt = Math.floor(state.debt * 1.1);
+    generatePrices();
+    renderLocs();
+    updateUI();
+    log(`Arrived at ${LOCS[idx]}. Interest added to debt.`);
+    if(state.day > MAX_DAYS) alert("Time is up! Final Cash: " + state.cash);
+}
+
+function openTrade(itemId, type) {
+    const item = ITEMS.find(i => i.id === itemId);
+    const price = state.prices[itemId];
+    document.getElementById('trade-title').innerText = (type === 'buy' ? 'BUY ' : 'SELL ') + item.name;
+    document.getElementById('trade-info').innerText = `Price: $${price}`;
+    document.getElementById('trade-input').value = type === 'buy' ? Math.floor(state.cash/price) : state.inventory[itemId];
+    document.getElementById('trade-confirm-btn').onclick = () => confirmTrade(itemId, type);
+    openModal('modal-trade');
+}
+
+function confirmTrade(itemId, type) {
+    const qty = parseInt(document.getElementById('trade-input').value);
+    const price = state.prices[itemId];
+    if(type === 'buy') {
+        if(state.cash >= qty * price) {
+            state.cash -= qty * price;
+            state.inventory[itemId] += qty;
+        }
+    } else {
+        if(state.inventory[itemId] >= qty) {
+            state.cash += qty * price;
+            state.inventory[itemId] -= qty;
+        }
+    }
+    closeModal('modal-trade');
+    updateUI();
+}
+
+function log(msg) {
+    const p = document.getElementById('log-panel');
+    const d = document.createElement('div');
+    d.className = 'log-entry';
+    d.innerText = msg;
+    p.prepend(d);
+}
+
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+init();
+</script>
+</body>
+</html>
