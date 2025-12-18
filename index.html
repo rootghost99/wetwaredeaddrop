@@ -183,6 +183,57 @@
         .log-entry.event-warning { border-left-color: var(--accent-yellow); }
         .log-timestamp { color: var(--text-dim); font-size: 0.65rem; margin-right: 6px; }
 
+        /* Toast notification system */
+        #toast-container {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        .toast {
+            background: #111;
+            border: 2px solid var(--accent-green);
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            animation: toast-in 0.3s ease-out, toast-out 0.3s ease-in 1.7s forwards;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            text-align: center;
+            min-width: 200px;
+        }
+        .toast.toast-buy {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+        .toast.toast-sell {
+            border-color: var(--accent-green);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+        .toast.toast-profit {
+            border-color: var(--accent-green);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+        }
+        .toast.toast-loss {
+            border-color: var(--accent-red);
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.3);
+        }
+        .toast-amount { font-size: 1.2rem; display: block; margin-top: 4px; }
+        .toast-profit-info { font-size: 0.8rem; display: block; margin-top: 4px; color: var(--text-dim); }
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes toast-out {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-20px); }
+        }
+
         /* Trade feedback flash */
         @keyframes flash-green {
             0%, 100% { background: transparent; }
@@ -204,6 +255,8 @@
         .trend-down::after { content: ' ▼'; color: var(--accent-red); font-size: 0.7rem; }
         .trend-spike::after { content: ' ⚡'; color: var(--accent-yellow); font-size: 0.7rem; }
         .trend-crash::after { content: ' 💥'; font-size: 0.7rem; }
+        .trend-bubble::after { content: ' 📈'; font-size: 0.7rem; }
+        .trend-falling::after { content: ' 📉'; font-size: 0.7rem; }
 
         /* Sector specialty indicator */
         .sector-specialty { font-size: 0.6rem; color: var(--accent-cyan); display: block; }
@@ -236,6 +289,9 @@
     </style>
 </head>
 <body>
+
+<!-- Toast notification container -->
+<div id="toast-container"></div>
 
 <header>
     <h1>NEON<span class="text-green">TRADER</span></h1>
@@ -392,13 +448,19 @@ const EVENTS = {
 
 let state = {
     day: 1, cash: 5000, debt: 3000, health: 100, cap: 100,
-    loc: 0, inventory: {}, prices: {}, priceTrends: {}, gameOver: false
+    loc: 0, inventory: {}, prices: {}, priceTrends: {}, gameOver: false,
+    // Track average purchase price for profit/loss calculation
+    costBasis: {},
+    // Track bubble/crash cycles: { itemId: { type: 'bubble'|'falling', duration: days_remaining, multiplier: current } }
+    priceCycles: {}
 };
 
 function init() {
     ITEMS.forEach(i => {
         state.inventory[i.id] = 0;
         state.priceTrends[i.id] = null;
+        state.costBasis[i.id] = 0;
+        state.priceCycles[i.id] = null;
     });
     generatePrices();
     renderLocs();
@@ -424,16 +486,58 @@ function generatePrices() {
             price = Math.floor(price * 1.4); // 40% markup on rare items
         }
 
-        // Clear previous trends unless they were just set by an event
-        if (state.priceTrends[item.id] !== 'spike' && state.priceTrends[item.id] !== 'crash') {
-            // Random minor trend (visual indicator)
-            const trend = Math.random();
-            if (trend < 0.2) state.priceTrends[item.id] = 'up';
-            else if (trend < 0.4) state.priceTrends[item.id] = 'down';
-            else state.priceTrends[item.id] = null;
+        // Handle bubble/crash cycles
+        let cycle = state.priceCycles[item.id];
+        if (cycle) {
+            // Apply cycle multiplier
+            price = Math.floor(price * cycle.multiplier);
+            cycle.duration--;
+
+            if (cycle.type === 'bubble') {
+                // Bubble grows each day
+                cycle.multiplier *= 1.15 + Math.random() * 0.1;
+                state.priceTrends[item.id] = 'bubble';
+
+                // Chance to pop the bubble
+                if (cycle.duration <= 0 || Math.random() < 0.15) {
+                    // Bubble pops - crash!
+                    state.priceCycles[item.id] = { type: 'falling', duration: 2, multiplier: 0.5 };
+                    state.priceTrends[item.id] = 'crash';
+                    log(`${item.name} bubble has BURST! Prices crashing!`, 'danger');
+                }
+            } else if (cycle.type === 'falling') {
+                // Falling prices recover slowly
+                cycle.multiplier *= 0.85;
+                state.priceTrends[item.id] = 'falling';
+
+                if (cycle.duration <= 0) {
+                    state.priceCycles[item.id] = null;
+                    state.priceTrends[item.id] = 'down';
+                }
+            }
+        } else {
+            // No active cycle - check for new cycle or regular trends
+            if (state.priceTrends[item.id] !== 'spike' && state.priceTrends[item.id] !== 'crash') {
+                const roll = Math.random();
+                if (roll < 0.08) {
+                    // 8% chance to start a bubble
+                    state.priceCycles[item.id] = { type: 'bubble', duration: 3 + Math.floor(Math.random() * 3), multiplier: 1.3 };
+                    state.priceTrends[item.id] = 'bubble';
+                    price = Math.floor(price * 1.3);
+                    log(`${item.name} prices are surging! A bubble is forming...`, 'warning');
+                } else if (roll < 0.2) {
+                    state.priceTrends[item.id] = 'up';
+                } else if (roll < 0.35) {
+                    state.priceTrends[item.id] = 'down';
+                } else {
+                    state.priceTrends[item.id] = null;
+                }
+            }
         }
 
-        state.prices[item.id] = Math.max(item.min, price); // Don't go below minimum
+        // Floor and ceiling
+        price = Math.max(item.min, Math.min(price, item.max * 3));
+        state.prices[item.id] = price;
     });
 }
 
@@ -493,19 +597,25 @@ function renderLocs() {
 
 function travel(idx) {
     if (state.gameOver) return;
+    const prevLoc = LOCATIONS[state.loc].name;
     state.day++;
     state.loc = idx;
+    const interestAdded = Math.floor(state.debt * 0.1);
     state.debt = Math.floor(state.debt * 1.1);
 
-    // Clear previous price trends before generating new prices
-    ITEMS.forEach(i => state.priceTrends[i.id] = null);
+    // Clear simple price trends but keep cycles active
+    ITEMS.forEach(i => {
+        if (!state.priceCycles[i.id] && state.priceTrends[i.id] !== 'spike' && state.priceTrends[i.id] !== 'crash') {
+            state.priceTrends[i.id] = null;
+        }
+    });
 
     generatePrices();
     renderLocs();
     updateUI();
 
     const loc = LOCATIONS[idx];
-    log(`Arrived at ${loc.name}. Interest added to debt.`);
+    log(`Traveled ${prevLoc} → ${loc.name}. Debt interest: +$${interestAdded.toLocaleString()}`);
 
     // Check for random event (40% chance)
     if (Math.random() < 0.4) {
@@ -626,10 +736,12 @@ function endGame(won, message) {
 function restartGame() {
     state = {
         day: 1, cash: 5000, debt: 3000, health: 100, cap: 100,
-        loc: 0, inventory: {}, prices: {}, priceTrends: {}, gameOver: false
+        loc: 0, inventory: {}, prices: {}, priceTrends: {}, gameOver: false,
+        costBasis: {}, priceCycles: {}
     };
     closeModal('modal-gameover');
     document.getElementById('log-panel').innerHTML = ''; // Clear log
+    document.getElementById('toast-container').innerHTML = ''; // Clear toasts
     init();
 }
 
@@ -664,6 +776,7 @@ function confirmTrade(itemId, type) {
     const price = state.prices[itemId];
     const item = ITEMS.find(i => i.id === itemId);
     const errorEl = document.getElementById('trade-error');
+    const loc = LOCATIONS[state.loc];
 
     if (isNaN(qty) || qty <= 0) {
         errorEl.innerText = "Enter a valid quantity";
@@ -684,9 +797,16 @@ function confirmTrade(itemId, type) {
             return;
         }
 
-        state.cash -= totalCost;
+        // Update cost basis (weighted average)
+        const prevQty = state.inventory[itemId];
+        const prevCost = state.costBasis[itemId] * prevQty;
+        const newTotalCost = prevCost + totalCost;
         state.inventory[itemId] += qty;
-        log(`Bought ${qty} ${item.name} for $${totalCost.toLocaleString()}`, 'good');
+        state.costBasis[itemId] = newTotalCost / state.inventory[itemId];
+
+        state.cash -= totalCost;
+        log(`Bought ${qty}x ${item.name} @ $${price.toLocaleString()}/ea = $${totalCost.toLocaleString()} at ${loc.name}`, 'good');
+        showToast('buy', item.name, qty, totalCost);
         flashScreen('buy');
         flashRow(itemId, 'buy');
     } else {
@@ -696,15 +816,58 @@ function confirmTrade(itemId, type) {
         }
 
         const totalEarned = qty * price;
+        const costBasis = state.costBasis[itemId] * qty;
+        const profit = totalEarned - costBasis;
+        const profitPercent = costBasis > 0 ? ((profit / costBasis) * 100).toFixed(1) : 0;
+
         state.cash += totalEarned;
         state.inventory[itemId] -= qty;
-        log(`Sold ${qty} ${item.name} for $${totalEarned.toLocaleString()}`, 'good');
+
+        // Reset cost basis if sold all
+        if (state.inventory[itemId] === 0) {
+            state.costBasis[itemId] = 0;
+        }
+
+        const profitStr = profit >= 0 ? `+$${profit.toLocaleString()}` : `-$${Math.abs(profit).toLocaleString()}`;
+        const logType = profit >= 0 ? 'good' : 'danger';
+        log(`Sold ${qty}x ${item.name} @ $${price.toLocaleString()}/ea = $${totalEarned.toLocaleString()} (${profitStr}, ${profitPercent}%)`, logType);
+        showToast('sell', item.name, qty, totalEarned, profit, profitPercent);
         flashScreen('sell');
         flashRow(itemId, 'sell');
     }
 
     closeModal('modal-trade');
     updateUI();
+}
+
+function showToast(type, itemName, qty, amount, profit = null, profitPercent = null) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+
+    if (type === 'buy') {
+        toast.className = 'toast toast-buy';
+        toast.innerHTML = `
+            <span class="text-cyan">PURCHASED</span>
+            <span class="toast-amount">${qty}x ${itemName}</span>
+            <span class="toast-profit-info">-$${amount.toLocaleString()}</span>
+        `;
+    } else {
+        const isProfit = profit >= 0;
+        toast.className = `toast ${isProfit ? 'toast-profit' : 'toast-loss'}`;
+        const profitColor = isProfit ? 'text-green' : 'text-red';
+        const profitStr = isProfit ? `+$${profit.toLocaleString()}` : `-$${Math.abs(profit).toLocaleString()}`;
+        toast.innerHTML = `
+            <span class="${profitColor}">SOLD</span>
+            <span class="toast-amount">${qty}x ${itemName}</span>
+            <span class="toast-profit-info">+$${amount.toLocaleString()}</span>
+            <span class="${profitColor}" style="display:block; font-size:0.9rem; margin-top:4px;">${profitStr} (${profitPercent}%)</span>
+        `;
+    }
+
+    container.appendChild(toast);
+
+    // Remove toast after animation completes
+    setTimeout(() => toast.remove(), 2000);
 }
 
 function flashRow(itemId, type) {
@@ -731,18 +894,19 @@ function confirmDebtPayment() {
     const amount = parseInt(document.getElementById('debt-input').value);
 
     if (isNaN(amount) || amount <= 0) {
-        log("Invalid payment amount.");
+        log("Invalid payment amount.", "warning");
         closeModal('modal-debt');
         return;
     }
 
     if (amount > state.cash) {
-        log("You don't have enough cash!");
+        log("You don't have enough cash!", "danger");
         closeModal('modal-debt');
         return;
     }
 
     const payment = Math.min(amount, state.debt);
+    const prevDebt = state.debt;
     state.cash -= payment;
     state.debt -= payment;
 
@@ -750,10 +914,38 @@ function confirmDebtPayment() {
     updateUI();
 
     if (state.debt <= 0) {
-        log(`Paid off ALL debt! You're free!`, 'good');
+        log(`DEBT CLEARED! Paid final $${payment.toLocaleString()}. You're free from the shark!`, 'good');
+        showDebtToast(payment, true);
     } else {
-        log(`Paid $${payment.toLocaleString()} towards debt. Remaining: $${state.debt.toLocaleString()}`);
+        const percentPaid = ((payment / prevDebt) * 100).toFixed(1);
+        log(`Paid $${payment.toLocaleString()} (${percentPaid}%) → Remaining: $${state.debt.toLocaleString()}`);
+        showDebtToast(payment, false, state.debt);
     }
+}
+
+function showDebtToast(amount, cleared, remaining = 0) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.style.borderColor = cleared ? 'var(--accent-green)' : 'var(--accent-yellow)';
+    toast.style.boxShadow = cleared ? '0 0 20px rgba(0, 255, 0, 0.5)' : '0 0 20px rgba(255, 255, 0, 0.3)';
+
+    if (cleared) {
+        toast.innerHTML = `
+            <span class="text-green">DEBT CLEARED!</span>
+            <span class="toast-amount">-$${amount.toLocaleString()}</span>
+            <span class="text-green" style="display:block; margin-top:4px;">FREE FROM THE SHARK</span>
+        `;
+    } else {
+        toast.innerHTML = `
+            <span class="text-yellow">DEBT PAYMENT</span>
+            <span class="toast-amount">-$${amount.toLocaleString()}</span>
+            <span class="toast-profit-info">Remaining: $${remaining.toLocaleString()}</span>
+        `;
+    }
+
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
 }
 
 function log(msg, type = null) {
