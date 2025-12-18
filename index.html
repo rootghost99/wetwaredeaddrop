@@ -68,6 +68,12 @@
             color: var(--accent-red);
         }
 
+        .btn-selected {
+            background: var(--accent-green);
+            color: #000;
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
         .text-green { color: var(--accent-green); }
         .text-red { color: var(--accent-red); }
         .text-cyan { color: var(--accent-cyan); }
@@ -389,6 +395,12 @@
         <p>Buy low, sell high. Pay the shark. Survive the streets.</p>
         <p style="font-size: 0.7rem; color: var(--text-dim);">Each sector has specialties. Watch your health. Random events will test you.</p>
         <div style="margin: 20px 0;">
+            <p style="font-size: 0.8rem; color: var(--accent-cyan); margin-bottom: 10px;">SELECT DIFFICULTY</p>
+            <div id="difficulty-select" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 15px;">
+                <button class="btn" onclick="selectDifficulty('easy')">EASY<span class="sector-specialty">$10k / $3k</span></button>
+                <button class="btn btn-selected" onclick="selectDifficulty('medium')">MEDIUM<span class="sector-specialty">$5k / $5k</span></button>
+                <button class="btn" onclick="selectDifficulty('hard')">HARD<span class="sector-specialty">$3k / $5k</span></button>
+            </div>
             <p style="font-size: 0.8rem; color: var(--accent-cyan); margin-bottom: 10px;">SELECT GAME LENGTH</p>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
                 <button class="btn" onclick="startGame(30)">30 DAYS<span class="sector-specialty">Quick</span></button>
@@ -476,6 +488,13 @@
 
 <script>
 let MAX_DAYS = 30; // Default, updated on game start
+let DIFFICULTY = 'medium'; // Default difficulty: easy, medium, hard
+
+const DIFFICULTY_SETTINGS = {
+    easy: { cash: 10000, debt: 3000, label: 'Easy', desc: '$10k Cash, $3k Debt' },
+    medium: { cash: 5000, debt: 5000, label: 'Medium', desc: '$5k Cash, $5k Debt' },
+    hard: { cash: 3000, debt: 5000, label: 'Hard', desc: '$3k Cash, $5k Debt' }
+};
 const ITEMS = [
     { id: 'h2o', name: 'Nano-Water', min: 5, max: 25 },
     { id: 'chips', name: 'Memory', min: 20, max: 80 },
@@ -595,11 +614,23 @@ function init() {
     updateUI();
 }
 
+function selectDifficulty(diff) {
+    DIFFICULTY = diff;
+    // Update button selection visuals
+    const buttons = document.querySelectorAll('#difficulty-select .btn');
+    buttons.forEach(btn => btn.classList.remove('btn-selected'));
+    event.target.classList.add('btn-selected');
+}
+
 function startGame(days = 30) {
     MAX_DAYS = days;
+    // Apply difficulty settings
+    const settings = DIFFICULTY_SETTINGS[DIFFICULTY];
+    state.cash = settings.cash;
+    state.debt = settings.debt;
     init();
     closeModal('modal-start');
-    log(`New ${days}-day game started. Good luck, runner.`, "good");
+    log(`New ${days}-day ${DIFFICULTY} game started. Cash: $${settings.cash.toLocaleString()}, Debt: $${settings.debt.toLocaleString()}. Good luck, runner.`, "good");
 }
 
 function generatePrices() {
@@ -869,16 +900,22 @@ function endGame(won, message) {
 
 function restartGame() {
     state = {
-        day: 1, cash: 5000, debt: 3000, health: 100, cap: 100,
+        day: 1, cash: 5000, debt: 5000, health: 100, cap: 100,
         loc: 0, inventory: {}, prices: {}, priceTrends: {}, gameOver: false,
         costBasis: {}, priceCycles: {},
         upgrades: {}, hasArmor: false, hasScanner: false,
         sharkVisits: 0, lastSharkDay: 0
     };
+    // Reset difficulty to default
+    DIFFICULTY = 'medium';
     closeModal('modal-gameover');
     document.getElementById('log-panel').innerHTML = ''; // Clear log
     document.getElementById('toast-container').innerHTML = ''; // Clear toasts
-    // Show start modal to let player choose game length
+    // Reset difficulty button selection
+    const buttons = document.querySelectorAll('#difficulty-select .btn');
+    buttons.forEach(btn => btn.classList.remove('btn-selected'));
+    buttons[1].classList.add('btn-selected'); // Medium is index 1
+    // Show start modal to let player choose game length and difficulty
     openModal('modal-start');
 }
 
@@ -1316,7 +1353,8 @@ function saveGame() {
         version: 1,
         timestamp: Date.now(),
         state: state,
-        maxDays: MAX_DAYS
+        maxDays: MAX_DAYS,
+        difficulty: DIFFICULTY
     };
 
     try {
@@ -1345,6 +1383,7 @@ function loadGame() {
         // Restore state
         state = parsed.state;
         MAX_DAYS = parsed.maxDays || 30; // Restore game length (default 30 for old saves)
+        DIFFICULTY = parsed.difficulty || 'medium'; // Restore difficulty (default medium for old saves)
 
         // Ensure new properties exist (backwards compatibility)
         if (!state.upgrades) state.upgrades = {};
