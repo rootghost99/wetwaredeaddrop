@@ -9,7 +9,7 @@
 
 A cyberpunk trading game where you hustle goods across neon-lit sectors, dodge loan sharks, and try to survive the streets.
 
-**[Play Now](https://rootghost99.github.io/neontrader/)** | **[Report Bug](https://github.com/rootghost99/neontrader/issues)**
+**[Play Now](https://rootghost99.github.io/wetwaredeaddrop/)** | **[Report Bug](https://github.com/rootghost99/wetwaredeaddrop/issues)**
 
 ---
 
